@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -177,7 +178,7 @@ func (q *verticalQuerier) sel(qs []Querier, ms []*labels.Matcher) (SeriesSet, er
 }
 
 // NewBlockQuerier returns a querier against the reader.
-func NewBlockQuerier(b BlockReader, mint, maxt int64) (Querier, error) {
+func NewBlockQuerier(ctx context.Context, b BlockReader, mint, maxt int64) (Querier, error) {
 	indexr, err := b.Index()
 	if err != nil {
 		return nil, errors.Wrapf(err, "open index reader")
@@ -194,16 +195,19 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (Querier, error) {
 		return nil, errors.Wrapf(err, "open tombstone reader")
 	}
 	return &blockQuerier{
-		mint:       mint,
-		maxt:       maxt,
+		ctx:        ctx,
 		index:      indexr,
 		chunks:     chunkr,
 		tombstones: tombsr,
+
+		mint: mint,
+		maxt: maxt,
 	}, nil
 }
 
 // blockQuerier provides querying access to a single block database.
 type blockQuerier struct {
+	ctx        context.Context
 	index      IndexReader
 	chunks     ChunkReader
 	tombstones tombstones.Reader
@@ -214,7 +218,7 @@ type blockQuerier struct {
 }
 
 func (q *blockQuerier) Select(ms ...*labels.Matcher) (SeriesSet, error) {
-	base, err := LookupChunkSeries(q.index, q.tombstones, ms...)
+	base, err := LookupChunkSeries(q.ctx, q.index, q.tombstones, ms...)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +236,7 @@ func (q *blockQuerier) Select(ms ...*labels.Matcher) (SeriesSet, error) {
 }
 
 func (q *blockQuerier) SelectSorted(ms ...*labels.Matcher) (SeriesSet, error) {
-	base, err := LookupChunkSeriesSorted(q.index, q.tombstones, ms...)
+	base, err := LookupChunkSeriesSorted(q.ctx, q.index, q.tombstones, ms...)
 	if err != nil {
 		return nil, err
 	}
@@ -708,6 +712,7 @@ type ChunkSeriesSet interface {
 // baseChunkSeries loads the label set and chunk references for a postings
 // list from an index. It filters out series that have labels set that should be unset.
 type baseChunkSeries struct {
+	ctx        context.Context
 	p          index.Postings
 	index      IndexReader
 	tombstones tombstones.Reader
@@ -720,17 +725,17 @@ type baseChunkSeries struct {
 
 // LookupChunkSeries retrieves all series for the given matchers and returns a ChunkSeriesSet
 // over them. It drops chunks based on tombstones in the given reader.
-func LookupChunkSeries(ir IndexReader, tr tombstones.Reader, ms ...*labels.Matcher) (ChunkSeriesSet, error) {
-	return lookupChunkSeries(false, ir, tr, ms...)
+func LookupChunkSeries(ctx context.Context, ir IndexReader, tr tombstones.Reader, ms ...*labels.Matcher) (ChunkSeriesSet, error) {
+	return lookupChunkSeries(ctx, false, ir, tr, ms...)
 }
 
 // LookupChunkSeries retrieves all series for the given matchers and returns a ChunkSeriesSet
 // over them. It drops chunks based on tombstones in the given reader. Series will be in order.
-func LookupChunkSeriesSorted(ir IndexReader, tr tombstones.Reader, ms ...*labels.Matcher) (ChunkSeriesSet, error) {
-	return lookupChunkSeries(true, ir, tr, ms...)
+func LookupChunkSeriesSorted(ctx context.Context, ir IndexReader, tr tombstones.Reader, ms ...*labels.Matcher) (ChunkSeriesSet, error) {
+	return lookupChunkSeries(ctx, true, ir, tr, ms...)
 }
 
-func lookupChunkSeries(sorted bool, ir IndexReader, tr tombstones.Reader, ms ...*labels.Matcher) (ChunkSeriesSet, error) {
+func lookupChunkSeries(ctx context.Context, sorted bool, ir IndexReader, tr tombstones.Reader, ms ...*labels.Matcher) (ChunkSeriesSet, error) {
 	if tr == nil {
 		tr = tombstones.NewMemTombstones()
 	}
@@ -742,6 +747,7 @@ func lookupChunkSeries(sorted bool, ir IndexReader, tr tombstones.Reader, ms ...
 		p = ir.SortedPostings(p)
 	}
 	return &baseChunkSeries{
+		ctx:        ctx,
 		p:          p,
 		index:      ir,
 		tombstones: tr,
@@ -762,6 +768,12 @@ func (s *baseChunkSeries) Next() bool {
 	)
 
 	for s.p.Next() {
+		select {
+		case <-s.ctx.Done():
+			s.err = s.ctx.Err()
+			return false
+		default:
+		}
 		ref := s.p.At()
 		if err := s.index.Series(ref, &lset, &chkMetas); err != nil {
 			// Postings may be stale. Skip if no underlying series exists.

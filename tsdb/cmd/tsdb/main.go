@@ -15,6 +15,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -135,7 +136,7 @@ func execute() (err error) {
 			merr.Add(db.Close())
 			err = merr.Err()
 		}()
-		return dumpSamples(db, *dumpMinTime, *dumpMaxTime)
+		return dumpSamples(db, context.Background(), *dumpMinTime, *dumpMaxTime)
 	}
 	return nil
 }
@@ -603,9 +604,9 @@ func analyzeBlock(b tsdb.BlockReader, limit int) error {
 	return nil
 }
 
-func dumpSamples(db *tsdb.DBReadOnly, mint, maxt int64) (err error) {
+func dumpSamples(db *tsdb.DBReadOnly, ctx context.Context, mint, maxt int64) (err error) {
 
-	q, err := db.Querier(mint, maxt)
+	q, err := db.Querier(ctx, mint, maxt)
 	if err != nil {
 		return err
 	}

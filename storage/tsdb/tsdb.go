@@ -220,8 +220,8 @@ func (a adapter) StartTime() (int64, error) {
 	return startTime + a.startTimeMargin, nil
 }
 
-func (a adapter) Querier(_ context.Context, mint, maxt int64) (storage.Querier, error) {
-	q, err := a.db.Querier(mint, maxt)
+func (a adapter) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	q, err := a.db.Querier(ctx, mint, maxt)
 	if err != nil {
 		return nil, err
 	}

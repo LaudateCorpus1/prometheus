@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -288,7 +289,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 	testutil.Ok(t, head.Init(0))
 	defer head.Close()
 
-	q, err := NewBlockQuerier(head, 0, 300)
+	q, err := NewBlockQuerier(context.Background(), head, 0, 300)
 	testutil.Ok(t, err)
 	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	testutil.Equals(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{100, 1}, sample{300, 2}}}, series)
@@ -553,7 +554,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 					),
 				})
 				for _, h := range []*Head{head, reloadedHead} {
-					q, err := NewBlockQuerier(h, h.MinTime(), h.MaxTime())
+					q, err := NewBlockQuerier(context.Background(), h, h.MinTime(), h.MaxTime())
 					testutil.Ok(t, err)
 					actSeriesSet, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
 					testutil.Ok(t, err)
@@ -599,7 +600,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	testutil.Ok(t, hb.Delete(0, 10000, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 
 	// Test the series returns no samples. The series is cleared only after compaction.
-	q, err := NewBlockQuerier(hb, 0, 100000)
+	q, err := NewBlockQuerier(context.Background(), hb, 0, 100000)
 	testutil.Ok(t, err)
 	res, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	testutil.Ok(t, err)
@@ -613,7 +614,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	_, err = app.Add(labels.Labels{{Name: "a", Value: "b"}}, 11, 1)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
-	q, err = NewBlockQuerier(hb, 0, 100000)
+	q, err = NewBlockQuerier(context.Background(), hb, 0, 100000)
 	testutil.Ok(t, err)
 	res, err = q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	testutil.Ok(t, err)
@@ -787,7 +788,7 @@ func TestDelete_e2e(t *testing.T) {
 		}
 		sort.Sort(matched)
 		for i := 0; i < numRanges; i++ {
-			q, err := NewBlockQuerier(hb, 0, 100000)
+			q, err := NewBlockQuerier(context.Background(), hb, 0, 100000)
 			testutil.Ok(t, err)
 			defer q.Close()
 			ss, err := q.SelectSorted(del.ms...)
@@ -1049,7 +1050,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 
 	testutil.Ok(t, app.Commit())
 
-	q, err := NewBlockQuerier(h, 1500, 2500)
+	q, err := NewBlockQuerier(context.Background(), h, 1500, 2500)
 	testutil.Ok(t, err)
 	defer q.Close()
 
@@ -1076,7 +1077,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 
 	testutil.Ok(t, app.Rollback())
 
-	q, err := NewBlockQuerier(h, 1500, 2500)
+	q, err := NewBlockQuerier(context.Background(), h, 1500, 2500)
 	testutil.Ok(t, err)
 	defer q.Close()
 

@@ -541,7 +541,15 @@ func (api *API) series(r *http.Request) apiFuncResult {
 		matcherSets = append(matcherSets, matchers)
 	}
 
-	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
+	// HACK: Timeout querier operations after 60s from now to avoid OOM
+	// for long running queries.
+	//
+	// Fixes issue: https://github.com/prometheus/prometheus/issues/5547
+	// Related issue: https://github.com/prometheus/prometheus/issues/5878
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	q, err := api.Queryable.Querier(ctx, timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
