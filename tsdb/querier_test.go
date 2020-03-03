@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -363,6 +364,7 @@ Outer:
 	for _, c := range cases.queries {
 		ir, cr, _, _ := createIdxChkReaders(t, cases.data)
 		querier := &blockQuerier{
+			ctx:        context.Background(),
 			index:      ir,
 			chunks:     cr,
 			tombstones: tombstones.NewMemTombstones(),
@@ -526,6 +528,7 @@ Outer:
 	for _, c := range cases.queries {
 		ir, cr, _, _ := createIdxChkReaders(t, cases.data)
 		querier := &blockQuerier{
+			ctx:        context.Background(),
 			index:      ir,
 			chunks:     cr,
 			tombstones: cases.tombstones,
@@ -633,6 +636,7 @@ func TestBaseChunkSeries(t *testing.T) {
 		}
 
 		bcs := &baseChunkSeries{
+			ctx:        context.Background(),
 			p:          index.NewListPostings(tc.postings),
 			index:      mi,
 			tombstones: tombstones.NewMemTombstones(),
@@ -1517,7 +1521,7 @@ func BenchmarkQueryIterator(b *testing.B) {
 					blocks: make([]Querier, 0, len(blocks)),
 				}
 				for _, blk := range blocks {
-					q, err := NewBlockQuerier(blk, math.MinInt64, math.MaxInt64)
+					q, err := NewBlockQuerier(context.Background(), blk, math.MinInt64, math.MaxInt64)
 					testutil.Ok(b, err)
 					que.blocks = append(que.blocks, q)
 				}
@@ -1591,7 +1595,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 					blocks: make([]Querier, 0, len(blocks)),
 				}
 				for _, blk := range blocks {
-					q, err := NewBlockQuerier(blk, math.MinInt64, math.MaxInt64)
+					q, err := NewBlockQuerier(context.Background(), blk, math.MinInt64, math.MaxInt64)
 					testutil.Ok(b, err)
 					que.blocks = append(que.blocks, q)
 				}
@@ -1736,7 +1740,7 @@ func BenchmarkSetMatcher(b *testing.B) {
 			blocks: make([]Querier, 0, len(blocks)),
 		}
 		for _, blk := range blocks {
-			q, err := NewBlockQuerier(blk, math.MinInt64, math.MaxInt64)
+			q, err := NewBlockQuerier(context.Background(), blk, math.MinInt64, math.MaxInt64)
 			testutil.Ok(b, err)
 			que.blocks = append(que.blocks, q)
 		}
@@ -2085,7 +2089,7 @@ func TestClose(t *testing.T) {
 		testutil.Ok(t, db.Close())
 	}()
 
-	q, err := db.Querier(0, 20)
+	q, err := db.Querier(context.Background(), 0, 20)
 	testutil.Ok(t, err)
 	testutil.Ok(t, q.Close())
 	testutil.NotOk(t, q.Close())
@@ -2167,7 +2171,7 @@ func BenchmarkQueries(b *testing.B) {
 				for x := 0; x <= 10; x++ {
 					block, err := OpenBlock(nil, createBlock(b, dir, series), nil)
 					testutil.Ok(b, err)
-					q, err := NewBlockQuerier(block, 1, int64(nSamples))
+					q, err := NewBlockQuerier(context.Background(), block, 1, int64(nSamples))
 					testutil.Ok(b, err)
 					qs = append(qs, q)
 				}
@@ -2176,7 +2180,7 @@ func BenchmarkQueries(b *testing.B) {
 				queryTypes["_10-Blocks"] = &querier{blocks: qs}
 
 				head := createHead(b, series)
-				qHead, err := NewBlockQuerier(head, 1, int64(nSamples))
+				qHead, err := NewBlockQuerier(context.Background(), head, 1, int64(nSamples))
 				testutil.Ok(b, err)
 				queryTypes["_Head"] = qHead
 

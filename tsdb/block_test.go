@@ -199,7 +199,7 @@ func TestCorruptedChunk(t *testing.T) {
 			}
 			defer func() { testutil.Ok(t, b.Close()) }()
 
-			querier, err := NewBlockQuerier(b, 0, 1)
+			querier, err := NewBlockQuerier(context.Background(), b, 0, 1)
 			testutil.Ok(t, err)
 			defer func() { testutil.Ok(t, querier.Close()) }()
 			set, err := querier.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
@@ -287,12 +287,12 @@ func TestReadIndexFormatV1(t *testing.T) {
 	block, err := OpenBlock(nil, blockDir, nil)
 	testutil.Ok(t, err)
 
-	q, err := NewBlockQuerier(block, 0, 1000)
+	q, err := NewBlockQuerier(context.Background(), block, 0, 1000)
 	testutil.Ok(t, err)
 	testutil.Equals(t, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")),
 		map[string][]tsdbutil.Sample{`{foo="bar"}`: []tsdbutil.Sample{sample{t: 1, v: 2}}})
 
-	q, err = NewBlockQuerier(block, 0, 1000)
+	q, err = NewBlockQuerier(context.Background(), block, 0, 1000)
 	testutil.Ok(t, err)
 	testutil.Equals(t, query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.?$")),
 		map[string][]tsdbutil.Sample{

@@ -341,7 +341,7 @@ func (db *DBReadOnly) FlushWAL(dir string) error {
 
 // Querier loads the wal and returns a new querier over the data partition for the given time range.
 // Current implementation doesn't support multiple Queriers.
-func (db *DBReadOnly) Querier(mint, maxt int64) (Querier, error) {
+func (db *DBReadOnly) Querier(ctx context.Context, mint, maxt int64) (Querier, error) {
 	select {
 	case <-db.closed:
 		return nil, ErrClosed
@@ -402,7 +402,7 @@ func (db *DBReadOnly) Querier(mint, maxt int64) (Querier, error) {
 		head:   head,
 	}
 
-	return dbWritable.Querier(mint, maxt)
+	return dbWritable.Querier(ctx, mint, maxt)
 }
 
 // Blocks returns a slice of block readers for persisted blocks.
@@ -1207,7 +1207,7 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 
 // Querier returns a new querier over the data partition for the given time range.
 // A goroutine must not handle more than one open Querier.
-func (db *DB) Querier(mint, maxt int64) (Querier, error) {
+func (db *DB) Querier(ctx context.Context, mint, maxt int64) (Querier, error) {
 	var blocks []BlockReader
 	var blockMetas []BlockMeta
 
@@ -1230,7 +1230,7 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 
 	blockQueriers := make([]Querier, 0, len(blocks))
 	for _, b := range blocks {
-		q, err := NewBlockQuerier(b, mint, maxt)
+		q, err := NewBlockQuerier(ctx, b, mint, maxt)
 		if err == nil {
 			blockQueriers = append(blockQueriers, q)
 			continue

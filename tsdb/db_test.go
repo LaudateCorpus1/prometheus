@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
@@ -129,7 +130,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	_, err := app.Add(labels.FromStrings("foo", "bar"), 0, 0)
 	testutil.Ok(t, err)
 
-	querier, err := db.Querier(0, 1)
+	querier, err := db.Querier(context.Background(), 0, 1)
 	testutil.Ok(t, err)
 	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	testutil.Equals(t, map[string][]tsdbutil.Sample{}, seriesSet)
@@ -137,7 +138,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	err = app.Commit()
 	testutil.Ok(t, err)
 
-	querier, err = db.Querier(0, 1)
+	querier, err = db.Querier(context.Background(), 0, 1)
 	testutil.Ok(t, err)
 	defer querier.Close()
 
@@ -160,7 +161,7 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 	err = app.Rollback()
 	testutil.Ok(t, err)
 
-	querier, err := db.Querier(0, 1)
+	querier, err := db.Querier(context.Background(), 0, 1)
 	testutil.Ok(t, err)
 	defer querier.Close()
 
@@ -208,7 +209,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 
 	testutil.Ok(t, app2.Commit())
 
-	q, err := db.Querier(0, 200)
+	q, err := db.Querier(context.Background(), 0, 200)
 	testutil.Ok(t, err)
 
 	res := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
@@ -301,7 +302,7 @@ Outer:
 		}
 
 		// Compare the result.
-		q, err := db.Querier(0, numSamples)
+		q, err := db.Querier(context.Background(), 0, numSamples)
 		testutil.Ok(t, err)
 
 		res, err := q.Select(labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
@@ -404,7 +405,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	testutil.Ok(t, app.Commit())
 
 	// Make sure the right value is stored.
-	q, err := db.Querier(0, 10)
+	q, err := db.Querier(context.Background(), 0, 10)
 	testutil.Ok(t, err)
 
 	ssMap := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
@@ -421,7 +422,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
-	q, err = db.Querier(0, 10)
+	q, err = db.Querier(context.Background(), 0, 10)
 	testutil.Ok(t, err)
 
 	ssMap = query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
@@ -460,7 +461,7 @@ func TestDB_Snapshot(t *testing.T) {
 	testutil.Ok(t, err)
 	defer func() { testutil.Ok(t, db.Close()) }()
 
-	querier, err := db.Querier(mint, mint+1000)
+	querier, err := db.Querier(context.Background(), mint, mint+1000)
 	testutil.Ok(t, err)
 	defer func() { testutil.Ok(t, querier.Close()) }()
 
@@ -514,7 +515,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	testutil.Ok(t, err)
 	defer func() { testutil.Ok(t, db.Close()) }()
 
-	querier, err := db.Querier(mint, mint+1000)
+	querier, err := db.Querier(context.Background(), mint, mint+1000)
 	testutil.Ok(t, err)
 	defer func() { testutil.Ok(t, querier.Close()) }()
 
@@ -586,7 +587,7 @@ Outer:
 		defer func() { testutil.Ok(t, db.Close()) }()
 
 		// Compare the result.
-		q, err := db.Querier(0, numSamples)
+		q, err := db.Querier(context.Background(), 0, numSamples)
 		testutil.Ok(t, err)
 		defer func() { testutil.Ok(t, q.Close()) }()
 
@@ -760,7 +761,7 @@ func TestDB_e2e(t *testing.T) {
 				}
 			}
 
-			q, err := db.Querier(mint, maxt)
+			q, err := db.Querier(context.Background(), mint, maxt)
 			testutil.Ok(t, err)
 
 			ss, err := q.Select(qry.ms...)
@@ -806,7 +807,7 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 	testutil.Ok(t, err)
 	defer func() { testutil.Ok(t, db.Close()) }()
 
-	q, err := db.Querier(0, 1)
+	q, err := db.Querier(context.Background(), 0, 1)
 	testutil.Ok(t, err)
 
 	values, err := q.LabelValues("labelname")
@@ -915,7 +916,7 @@ func TestTombstoneClean(t *testing.T) {
 		testutil.Ok(t, db.CleanTombstones())
 
 		// Compare the result.
-		q, err := db.Querier(0, numSamples)
+		q, err := db.Querier(context.Background(), 0, numSamples)
 		testutil.Ok(t, err)
 		defer q.Close()
 
@@ -1257,7 +1258,7 @@ func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 		series: labelpairs[:1],
 	}}
 
-	q, err := db.Querier(0, 10)
+	q, err := db.Querier(context.Background(), 0, 10)
 	testutil.Ok(t, err)
 	defer func() { testutil.Ok(t, q.Close()) }()
 
@@ -1456,7 +1457,7 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 
 	testutil.Assert(t, len(db.blocks) >= 3, "invalid test, less than three blocks in DB")
 
-	q, err := db.Querier(blockRange, 2*blockRange)
+	q, err := db.Querier(context.Background(), blockRange, 2*blockRange)
 	testutil.Ok(t, err)
 	defer q.Close()
 
@@ -1778,7 +1779,7 @@ func TestDB_LabelNames(t *testing.T) {
 		appendSamples(db, 5, 9, tst.sampleLabels2)
 
 		// Testing DB (union).
-		q, err := db.Querier(math.MinInt64, math.MaxInt64)
+		q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
 		testutil.Ok(t, err)
 		labelNames, err = q.LabelNames()
 		testutil.Ok(t, err)
@@ -2165,7 +2166,7 @@ func TestVerticalCompaction(t *testing.T) {
 			testutil.Assert(t, len(db.blocks) == len(c.blockSeries), "Wrong number of blocks [before compact].")
 
 			// Vertical Query Merging test.
-			querier, err := db.Querier(0, 100)
+			querier, err := db.Querier(context.Background(), 0, 100)
 			testutil.Ok(t, err)
 			actSeries := query(t, querier, defaultMatcher)
 			testutil.Equals(t, c.expSeries, actSeries)
@@ -2180,7 +2181,7 @@ func TestVerticalCompaction(t *testing.T) {
 			testutil.Equals(t, c.expOverlappingBlocks, int(prom_testutil.ToFloat64(lc.metrics.overlappingBlocks)), "overlapping blocks count mismatch")
 
 			// Query test after merging the overlapping blocks.
-			querier, err = db.Querier(0, 100)
+			querier, err = db.Querier(context.Background(), 0, 100)
 			testutil.Ok(t, err)
 			actSeries = query(t, querier, defaultMatcher)
 			testutil.Equals(t, c.expSeries, actSeries)
@@ -2344,7 +2345,7 @@ func TestDBReadOnly(t *testing.T) {
 		testutil.Ok(t, err)
 		testutil.Assert(t, expDbSize > dbSizeBeforeAppend, "db size didn't increase after an append")
 
-		q, err := dbWritable.Querier(math.MinInt64, math.MaxInt64)
+		q, err := dbWritable.Querier(context.Background(), math.MinInt64, math.MaxInt64)
 		testutil.Ok(t, err)
 		expSeries = query(t, q, matchAll)
 
@@ -2367,7 +2368,7 @@ func TestDBReadOnly(t *testing.T) {
 			testutil.Equals(t, expBlock.Meta(), blocks[i].Meta(), "block meta mismatch")
 		}
 
-		q, err := dbReadOnly.Querier(math.MinInt64, math.MaxInt64)
+		q, err := dbReadOnly.Querier(context.Background(), math.MinInt64, math.MaxInt64)
 		testutil.Ok(t, err)
 		readOnlySeries := query(t, q, matchAll)
 		readOnlyDBHash := testutil.DirHash(t, dbDir)
@@ -2393,7 +2394,7 @@ func TestDBReadOnlyClosing(t *testing.T) {
 	testutil.Equals(t, db.Close(), ErrClosed)
 	_, err = db.Blocks()
 	testutil.Equals(t, err, ErrClosed)
-	_, err = db.Querier(0, 1)
+	_, err = db.Querier(context.Background(), 0, 1)
 	testutil.Equals(t, err, ErrClosed)
 }
 
@@ -2449,7 +2450,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Equals(t, len(blocks), 1)
 
-	querier, err := db.Querier(0, int64(maxt)-1)
+	querier, err := db.Querier(context.Background(), 0, int64(maxt)-1)
 	testutil.Ok(t, err)
 	defer func() { testutil.Ok(t, querier.Close()) }()
 

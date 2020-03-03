@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -140,7 +141,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 		matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
 		for s := 1; s <= numSeries; s *= 10 {
 			b.Run(fmt.Sprintf("%dof%d", s, numSeries), func(b *testing.B) {
-				q, err := NewBlockQuerier(br, 0, int64(s-1))
+				q, err := NewBlockQuerier(context.Background(), br, 0, int64(s-1))
 				testutil.Ok(b, err)
 
 				b.ResetTimer()
