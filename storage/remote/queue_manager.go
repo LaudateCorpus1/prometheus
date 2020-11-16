@@ -47,6 +47,15 @@ const (
 )
 
 var (
+	enqueueSamplesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "enqueue_samples_total",
+			Help:      "Total number of samples successfully enqued to shards queue.",
+		},
+		[]string{remoteName, endpoint},
+	)
 	succeededSamplesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
@@ -222,6 +231,7 @@ type QueueManager struct {
 	numShardsMetric            prometheus.Gauge
 	failedSamplesTotal         prometheus.Counter
 	sentBatchDuration          prometheus.Observer
+	enqueueSamplesTotal        prometheus.Counter
 	succeededSamplesTotal      prometheus.Counter
 	retriedSamplesTotal        prometheus.Counter
 	shardCapacity              prometheus.Gauge
@@ -297,6 +307,7 @@ outer:
 				t:      s.T,
 				v:      s.V,
 			}) {
+				t.enqueueSamplesTotal.Inc()
 				continue outer
 			}
 
@@ -328,6 +339,7 @@ func (t *QueueManager) Start() {
 	t.numShardsMetric = numShards.WithLabelValues(name, ep)
 	t.failedSamplesTotal = failedSamplesTotal.WithLabelValues(name, ep)
 	t.sentBatchDuration = sentBatchDuration.WithLabelValues(name, ep)
+	t.enqueueSamplesTotal = enqueueSamplesTotal.WithLabelValues(name, ep)
 	t.succeededSamplesTotal = succeededSamplesTotal.WithLabelValues(name, ep)
 	t.retriedSamplesTotal = retriedSamplesTotal.WithLabelValues(name, ep)
 	t.shardCapacity = shardCapacity.WithLabelValues(name, ep)
@@ -346,9 +358,17 @@ func (t *QueueManager) Start() {
 	t.shards.start(t.numShards)
 	t.watcher.Start()
 
-	t.wg.Add(2)
-	go t.updateShardsLoop()
-	go t.reshardLoop()
+	if t.cfg.MinShards < t.cfg.MaxShards {
+		t.wg.Add(2)
+		go t.updateShardsLoop()
+		go t.reshardLoop()
+	} else {
+		level.Info(t.logger).Log(
+			"msg", "Shard resizing disabled",
+			"MinShards", t.cfg.MinShards,
+			"MaxShards", t.cfg.MaxShards,
+		)
+	}
 }
 
 // Stop stops sending samples to the remote storage and waits for pending
@@ -381,6 +401,7 @@ func (t *QueueManager) Stop() {
 	numShards.DeleteLabelValues(name, ep)
 	failedSamplesTotal.DeleteLabelValues(name, ep)
 	sentBatchDuration.DeleteLabelValues(name, ep)
+	enqueueSamplesTotal.DeleteLabelValues(name, ep)
 	succeededSamplesTotal.DeleteLabelValues(name, ep)
 	retriedSamplesTotal.DeleteLabelValues(name, ep)
 	shardCapacity.DeleteLabelValues(name, ep)
@@ -754,10 +775,16 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
 		case sample, ok := <-queue:
 			if !ok {
 				if nPending > 0 {
-					level.Debug(s.qm.logger).Log("msg", "Flushing samples to remote storage...", "count", nPending)
+					level.Info(s.qm.logger).Log(
+						"shard", shardNum,
+						"Flushing samples to remote storage...", "count", nPending,
+					)
 					s.sendSamples(ctx, pendingSamples[:nPending], &buf)
 					s.qm.pendingSamplesMetric.Sub(float64(nPending))
-					level.Debug(s.qm.logger).Log("msg", "Done flushing.")
+					level.Info(s.qm.logger).Log(
+						"shard", shardNum,
+						"msg", "Done flushing.",
+					)
 				}
 				return
 			}
@@ -773,8 +800,8 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
 
 			if nPending >= max {
 				s.sendSamples(ctx, pendingSamples, &buf)
+				s.qm.pendingSamplesMetric.Sub(float64(len(pendingSamples)))
 				nPending = 0
-				s.qm.pendingSamplesMetric.Sub(float64(max))
 
 				stop()
 				timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -782,10 +809,14 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan sample) {
 
 		case <-timer.C:
 			if nPending > 0 {
-				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending samples", "samples", nPending, "shard", shardNum)
+				level.Info(s.qm.logger).Log(
+					"shard", shardNum,
+					"msg", "runShard timer ticked, sending samples",
+					"samples", nPending,
+				)
 				s.sendSamples(ctx, pendingSamples[:nPending], &buf)
-				nPending = 0
 				s.qm.pendingSamplesMetric.Sub(float64(nPending))
+				nPending = 0
 			}
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 		}
@@ -840,7 +871,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			return err
 		}
 		s.qm.retriedSamplesTotal.Add(float64(len(samples)))
-		level.Debug(s.qm.logger).Log("msg", "failed to send batch, retrying", "err", err)
+		level.Info(s.qm.logger).Log("msg", "failed to send batch, retrying", "err", err)
 
 		time.Sleep(time.Duration(backoff))
 		backoff = backoff * 2
