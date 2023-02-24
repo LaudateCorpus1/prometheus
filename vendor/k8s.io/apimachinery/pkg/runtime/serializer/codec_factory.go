@@ -108,10 +108,9 @@ func newSerializersForScheme(scheme *runtime.Scheme, mf json.MetaFactory, option
 // CodecFactory provides methods for retrieving codecs and serializers for specific
 // versions and content types.
 type CodecFactory struct {
-	scheme      *runtime.Scheme
-	serializers []serializerType
-	universal   runtime.Decoder
-	accepts     []runtime.SerializerInfo
+	scheme    *runtime.Scheme
+	universal runtime.Decoder
+	accepts   []runtime.SerializerInfo
 
 	legacySerializer runtime.Serializer
 }
@@ -216,9 +215,8 @@ func newCodecFactory(scheme *runtime.Scheme, serializers []serializerType) Codec
 	}
 
 	return CodecFactory{
-		scheme:      scheme,
-		serializers: serializers,
-		universal:   recognizer.NewDecoder(decoders...),
+		scheme:    scheme,
+		universal: recognizer.NewDecoder(decoders...),
 
 		accepts: accepts,
 
@@ -322,7 +320,3 @@ func (f WithoutConversionCodecFactory) DecoderToVersion(serializer runtime.Decod
 		Decoder: serializer,
 	}
 }
-
-// DirectCodecFactory was renamed to WithoutConversionCodecFactory in 1.15.
-// TODO: remove in 1.16.
-type DirectCodecFactory = WithoutConversionCodecFactory
